@@ -1,11 +1,11 @@
-# Self-Hosting-Template
+# paperless-ngx
 
-A GitHub template repo for bootstrapping new self-hosting projects with linting, CI, and release automation already wired up.
+Self-hosting config for [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx), bootstrapped from the [Self-Hosting-Template](https://github.com/Self-Host-Server) with linting, CI, and release automation already wired up.
 
 ## What's included
 
+- **`compose.yml` / `.env.example`** — Docker Compose stack for running paperless-ngx (webserver, Postgres, Redis, Gotenberg, Tika), with optional OIDC login via Authentik. See [INSTRUCTIONS.md](INSTRUCTIONS.md).
 - **`environment.yml` / `requirements.txt`** — conda environment (Python, pip, `gh`) with Python deps installed via pip.
-- **`compose.yml` / `.env.example`** — Docker Compose stack for running [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) (webserver, Postgres, Redis, Gotenberg, Tika), with optional OIDC login via Authentik. See [INSTRUCTIONS.md](INSTRUCTIONS.md).
 - **`pyproject.toml`** — [tox](https://tox.wiki) environments for linting and formatting:
   - `lint` — `ruff check`
   - `format` — `ruff format` + `ruff check --fix` + `prettier --write` + `taplo fmt`
@@ -23,27 +23,26 @@ A GitHub template repo for bootstrapping new self-hosting projects with linting,
 - **`CODEOWNERS`** — defaults review ownership to `@Self-Host-Server/code-owners`.
 - **`.gitignore`** — editor/AI-assistant artifacts (`.vscode`, `.cursor`, `CLAUDE.md`, etc.), `.env`, `node_modules`.
 
-## Using this template
+## Deploying paperless-ngx
 
-1. Click **Use this template** on GitHub to create a new repo.
-2. Set up the environment:
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for bringing up the `compose.yml` stack and configuring OIDC login via Authentik.
+
+## Development setup
+
+1. Set up the environment:
 
    ```bash
    conda env create -f environment.yml
    conda activate paperless
    ```
 
-3. Install `tox` and run the full check locally before pushing:
+2. Install `tox` and run the full check locally before pushing:
 
    ```bash
    pip install tox
    tox -e github   # lint + txt-lint + prettier + toml-lint
    tox -e format   # auto-fix formatting issues
    ```
-
-## Deploying paperless-ngx
-
-See [INSTRUCTIONS.md](INSTRUCTIONS.md) for bringing up the `compose.yml` stack and configuring OIDC login via Authentik.
 
 ## Contributing
 
