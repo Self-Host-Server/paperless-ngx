@@ -5,6 +5,7 @@ A GitHub template repo for bootstrapping new self-hosting projects with linting,
 ## What's included
 
 - **`environment.yml` / `requirements.txt`** — conda environment (Python, pip, `gh`) with Python deps installed via pip.
+- **`compose.yml` / `.env.example`** — Docker Compose stack for running [paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) (webserver, Postgres, Redis, Gotenberg, Tika), with optional OIDC login via Authentik. See [INSTRUCTIONS.md](INSTRUCTIONS.md).
 - **`pyproject.toml`** — [tox](https://tox.wiki) environments for linting and formatting:
   - `lint` — `ruff check`
   - `format` — `ruff format` + `ruff check --fix` + `prettier --write` + `taplo fmt`
@@ -29,7 +30,7 @@ A GitHub template repo for bootstrapping new self-hosting projects with linting,
 
    ```bash
    conda env create -f environment.yml
-   conda activate template
+   conda activate paperless
    ```
 
 3. Install `tox` and run the full check locally before pushing:
@@ -39,6 +40,10 @@ A GitHub template repo for bootstrapping new self-hosting projects with linting,
    tox -e github   # lint + txt-lint + prettier + toml-lint
    tox -e format   # auto-fix formatting issues
    ```
+
+## Deploying paperless-ngx
+
+See [INSTRUCTIONS.md](INSTRUCTIONS.md) for bringing up the `compose.yml` stack and configuring OIDC login via Authentik.
 
 ## Contributing
 
