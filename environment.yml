@@ -1,4 +1,4 @@
-name: template
+name: paperless
 channels:
   - defaults
   - conda-forge
