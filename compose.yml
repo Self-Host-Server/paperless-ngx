@@ -23,7 +23,7 @@ services:
       - "--chromium-disable-routes=true"
 
   tika:
-    image: ghcr.io/paperless-ngx/tika:latest
+    image: docker.io/apache/tika:3.3.1.0
     restart: unless-stopped
 
   webserver:
@@ -50,8 +50,8 @@ services:
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
-      - ./export:/usr/src/paperless/export
-      - ./consume:/usr/src/paperless/consume
+      - ./export:/usr/src/paperless/export:Z
+      - ./consume:/usr/src/paperless/consume:Z
 
 volumes:
   data:
