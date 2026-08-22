@@ -1,0 +1,10 @@
+.lh
+.env
+.vscode
+.giga
+.cursor
+.cursorrules
+AGENTS.md
+copilot-instructions.md
+CLAUDE.md
+node_modules

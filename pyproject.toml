@@ -1,0 +1,211 @@
+# =============================================================================
+# GIT-CLIFF — PR description generator
+# =============================================================================
+
+[tool.git-cliff.changelog]
+header = ""
+body = """
+## Summary
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }}
+{%- endfor %}
+{% endfor %}
+
+## Test plan
+
+- [ ] Review the changes above
+- [ ] Existing tests pass
+"""
+trim = true
+
+[tool.git-cliff.git]
+conventional_commits = true
+# No catch-all parser: an unprefixed commit is dropped from release notes
+# entirely rather than lumped into a generic bucket. That's deliberate — it's
+# the signal that pushes contributors (human or AI) toward the right prefix
+# instead of silently degrading the changelog. See CONTRIBUTING.md.
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat", group = "✨ Features" },
+  { message = "^fix", group = "🐛 Bug Fixes" },
+  { message = "^docs", group = "📚 Documentation" },
+  { message = "^refactor", group = "♻️ Refactoring" },
+  { message = "^perf", group = "⚡ Performance" },
+  { message = "^test", group = "🧪 Tests" },
+  { message = "^style", group = "🔧 Chores" },
+  { message = "^build", group = "🔧 Chores" },
+  { message = "^ci", group = "🔧 Chores" },
+  { message = "^chore", group = "🔧 Chores" },
+  { message = "^revert", group = "🔧 Chores" },
+]
+
+
+# =============================================================================
+# RUFF — Python linter & formatter
+# =============================================================================
+
+[tool.ruff]
+line-length = 180
+exclude = ["__pycache__", "venv", ".tox", ".venv", "tests.py", "env"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+ignore = ["E203", "E501", "E701", "E401", "B008"]
+
+
+# =============================================================================
+# TOX — Test & task runner
+# =============================================================================
+
+# Default envs run when you type `tox` with no arguments
+[tool.tox]
+env_list = ["lint", "txt-lint", "format", "prettier", "toml-lint"]
+work_dir = "/tmp/.tox"
+
+# Shared base config inherited by all envs
+[tool.tox.env_run_base]
+pass_env = ["PATH"]
+set_env = { VIRTUALENV_OVERRIDE_APP_DATA = "{work_dir}/.virtualenv" }
+
+# --- Linting ----------------------------------------------------------------
+
+[tool.tox.env.lint]
+skip_install = true
+base_python = "python3"
+deps = ["ruff"]
+commands = [["ruff", "check", "--no-cache", "."]]
+
+[tool.tox.env."txt-lint"]
+skip_install = true
+allowlist_externals = ["npx", "npm"]
+commands = [
+  [
+    "npm",
+    "install",
+    "--save-dev",
+    "textlint",
+    "textlint-rule-common-misspellings",
+    "textlint-rule-write-good",
+  ],
+  [
+    "npx",
+    "textlint",
+    "--rule",
+    "common-misspellings",
+    "--rule",
+    "write-good",
+    "**/*.txt",
+  ],
+]
+
+# --- Formatting -------------------------------------------------------------
+
+[tool.tox.env.format]
+skip_install = true
+deps = ["ruff", "ty"]
+allowlist_externals = ["npx"]
+commands = [
+  [
+    "ruff",
+    "format",
+    "--no-cache",
+    "--verbose",
+    ".",
+  ],
+  [
+    "ruff",
+    "check",
+    "--no-cache",
+    "--fix",
+    "--verbose",
+    ".",
+  ],
+  [
+    "npx",
+    "prettier",
+    "--write",
+    "--log-level",
+    "log",
+    "**/*.{css,js,html,json,yml,yaml,md}",
+  ],
+  [
+    "npx",
+    "@taplo/cli",
+    "fmt",
+    "--no-auto-config",
+    "**/*.toml",
+  ],
+]
+
+[tool.tox.env.prettier]
+skip_install = true
+allowlist_externals = ["npx"]
+commands = [
+  [
+    "npx",
+    "prettier",
+    "--check",
+    "**/*.{css,js,html,json,yml,yaml,md}",
+  ],
+]
+
+[tool.tox.env."toml-lint"]
+skip_install = true
+allowlist_externals = ["npx"]
+commands = [
+  [
+    "npx",
+    "@taplo/cli",
+    "fmt",
+    "--check",
+    "--no-auto-config",
+    "**/*.toml",
+  ],
+  [
+    "npx",
+    "@taplo/cli",
+    "lint",
+    "--no-auto-config",
+    "**/*.toml",
+  ],
+]
+
+
+# --- Aggregate (CI) ---------------------------------------------------------
+
+# Runs the full CI chain: no-classes-check → lint → txt-lint → prettier → tests
+[tool.tox.env.github]
+skip_install = true
+deps = []
+allowlist_externals = ["tox"]
+commands = [
+  [
+    "tox",
+    "-e",
+    "lint",
+  ],
+  [
+    "tox",
+    "-e",
+    "txt-lint",
+  ],
+  [
+    "tox",
+    "-e",
+    "prettier",
+  ],
+  [
+    "tox",
+    "-e",
+    "toml-lint",
+  ],
+]
+
+# Runs format then the full github chain
+[tool.tox.env.all]
+skip_install = true
+deps = []
+allowlist_externals = ["tox"]
+commands = [["tox", "-e", "format"], ["tox", "-e", "github"]]

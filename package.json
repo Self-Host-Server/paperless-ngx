@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "prettier": "^3.9.6"
+  },
+  "devDependencies": {
+    "textlint": "^15.8.0",
+    "textlint-rule-common-misspellings": "^1.0.1",
+    "textlint-rule-write-good": "^2.0.0"
+  }
+}
