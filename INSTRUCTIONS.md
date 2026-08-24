@@ -52,6 +52,26 @@ Optional flags in `.env`:
 - `PAPERLESS_SOCIAL_AUTO_SIGNUP=true` — skip the "confirm details" step on first SSO login
 - `PAPERLESS_DISABLE_REGULAR_LOGIN=true` — disable username/password login, SSO only
 - `PAPERLESS_REDIRECT_LOGIN_TO_SSO=true` — skip the login page and go straight to Authentik
+- `PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS=<group name>` — auto-add every new SSO signup to this group. Without it, new SSO users are created with no permissions and hit a 403 on first login. The group must already exist; create it once:
+
+  ```bash
+  docker compose -f compose.yml exec webserver python3 manage.py shell -c "
+  from django.contrib.auth.models import Group, Permission
+  group, _ = Group.objects.get_or_create(name='SSO Users')
+  codenames = [
+      'view_document', 'add_document', 'change_document',
+      'view_correspondent', 'add_correspondent', 'change_correspondent',
+      'view_documenttype', 'add_documenttype', 'change_documenttype',
+      'view_tag', 'add_tag', 'change_tag',
+      'view_storagepath', 'add_storagepath', 'change_storagepath',
+      'view_note', 'add_note', 'change_note',
+      'view_uisettings', 'add_uisettings',
+  ]
+  group.permissions.set(Permission.objects.filter(codename__in=codenames))
+  "
+  ```
+
+  The group name must match `PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS` exactly. `view_uisettings`/`add_uisettings` are required for the web UI itself to load (`/api/ui_settings/`) — without them, SSO users see a 403 immediately after login even with document permissions granted.
 
 ## Stopping / updating
 
