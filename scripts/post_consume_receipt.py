@@ -7,19 +7,11 @@ Configured entirely via env vars -- stdlib only, no external dependencies,
 since post-consume scripts run inside whatever Python environment the
 paperless container already has, not a dedicated venv for this script.
 """
-import csv
-import fcntl
-import io
-import json
-import os
-import re
-import sys
-import urllib.error
-import urllib.request
+import csv, fcntl, io, json, os, re, sys, urllib.error, urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-TEMPLATE_CSV = """\
+TEMPLATE_HEADER = """\
 ,,,,,,,Statement Number:,,,,
 ,,,Connx INC,,,,,,,,
 Expense Statement,,,"103 Morgan Lane,Plainsboro, NJ 08536. Ph: 609-955-3030",,,,,,,,
@@ -32,40 +24,29 @@ SSN,,,Position,,,,,,To,,
 Employee ID,,,Manager,,,,,,,,
 ,,,,,,,,,,,
 Date,Description,,Hotel,Transport,Fuel,Meals,Phone,Entertain.,Misc.,TOTAL,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
-,,,,,,,,,,$0.00,
+"""
+TEMPLATE_LINE_ITEM_ROW = ",,,,,,,,,,$0.00,\n"
+TEMPLATE_LINE_ITEM_ROW_COUNT = 20
+TEMPLATE_TOTALS = """\
 ,,,0.00,0.00,0.00,0.00,0.00,0.00,0.00,,
 ,,,,,,,,Subtotal,,0.00,
 ,,,,,,,,Advances,,,
 ,,,,,,,,TOTAL,,0.00,
 Approved,,Notes,,,,,,,,,
-,,,,,,,,,,,
-,,,,,,,,,,,
-,,,,,,,,,,,
-,,,,,,,,,,,
-,,,,,,,,,,,
-,,,,,,,,,,,
+"""
+TEMPLATE_BLANK_ROW = ",,,,,,,,,,,\n"
+TEMPLATE_BLANK_ROW_COUNT = 6
+TEMPLATE_FOOTER = """\
 For Office Use Only,,,,,,,,,,,
 ,,,,,,,,,,,
 """
+TEMPLATE_CSV = (
+    TEMPLATE_HEADER
+    + TEMPLATE_LINE_ITEM_ROW * TEMPLATE_LINE_ITEM_ROW_COUNT
+    + TEMPLATE_TOTALS
+    + TEMPLATE_BLANK_ROW * TEMPLATE_BLANK_ROW_COUNT
+    + TEMPLATE_FOOTER
+)
 
 CATEGORY_COLUMNS = {
     "Hotel": 3,
@@ -80,10 +61,6 @@ VALID_CATEGORIES = set(CATEGORY_COLUMNS)
 DATE_COL = 0
 DESCRIPTION_COL = 1
 TOTAL_COL = 10
-
-
-class ExtractionError(Exception):
-    pass
 
 
 def _env(name, default=None, required=False):
@@ -102,7 +79,7 @@ def fetch_document_content(document_id, paperless_url, api_token):
         data = json.loads(response.read().decode("utf-8"))
     content = data.get("content")
     if not content:
-        raise ExtractionError(f"Document {document_id} has no OCR content yet.")
+        raise RuntimeError(f"Document {document_id} has no OCR content yet.")
     return content
 
 
@@ -154,7 +131,7 @@ def validate_extraction(extracted, fallback_date):
         if amount <= 0:
             raise ValueError
     except (TypeError, ValueError) as err:
-        raise ExtractionError(f"No valid amount extracted (got {amount!r}) -- refusing to guess, skipping.") from err
+        raise RuntimeError(f"No valid amount extracted (got {amount!r}) -- refusing to guess, skipping.") from err
 
     receipt_date = fallback_date
     date_str = extracted.get("date")
@@ -320,7 +297,7 @@ def run():
         ocr_text = fetch_document_content(document_id, paperless_url, api_token)
         extracted = call_ollama_extract(ocr_text, ollama_base_url, ollama_model)
         entry = validate_extraction(extracted, fallback_date)
-    except (ExtractionError, urllib.error.URLError, json.JSONDecodeError, KeyError) as err:
+    except (RuntimeError, urllib.error.URLError, json.JSONDecodeError, KeyError) as err:
         print(f"ERROR: receipt automation failed for document {document_id}: {err}", file=sys.stderr)
         return
 
