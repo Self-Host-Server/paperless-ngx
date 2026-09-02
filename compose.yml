@@ -47,14 +47,26 @@ services:
       PAPERLESS_TIKA_ENABLED: 1
       PAPERLESS_TIKA_ENDPOINT: http://tika:9998
       PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
+      PAPERLESS_POST_CONSUME_SCRIPT: /usr/src/paperless/scripts/post_consume_receipt.py
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
+      PAPERLESS_RECEIPT_TAG: ${PAPERLESS_RECEIPT_TAG:-Receipt}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://192.168.1.14:11434}
+      OLLAMA_EXTRACTION_MODEL: ${OLLAMA_EXTRACTION_MODEL:-qwen2.5:7b}
+      EXPENSE_PERIOD_CADENCE: ${EXPENSE_PERIOD_CADENCE:-monthly}
+      EXPENSE_PERIOD_ANCHOR: ${EXPENSE_PERIOD_ANCHOR:-}
+      EMPLOYEE_NAME: ${EMPLOYEE_NAME}
+      EXPENSE_OUTPUT_DIR: /data/expense-statements
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
       - ./export:/usr/src/paperless/export:Z
       - ./consume:/usr/src/paperless/consume:Z
+      - ./scripts/post_consume_receipt.py:/usr/src/paperless/scripts/post_consume_receipt.py:ro
+      - expense_statements:/data/expense-statements
 
 volumes:
   data:
   media:
   pgdata:
   redisdata:
+  expense_statements:
