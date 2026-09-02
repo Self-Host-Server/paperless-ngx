@@ -8,7 +8,7 @@ since post-consume scripts run inside whatever Python environment the
 paperless container already has, not a dedicated venv for this script.
 """
 
-import csv, fcntl, io, json, os, re, sys, urllib.error, urllib.request
+import csv, fcntl, io, json, os, re, sys, urllib.error, urllib.parse, urllib.request, uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -56,6 +56,11 @@ VALID_CATEGORIES = set(CATEGORY_COLUMNS)
 DATE_COL = 0
 DESCRIPTION_COL = 1
 TOTAL_COL = 10
+
+# Original filename prefix used for CSVs this script itself uploads back into
+# paperless (see sync_csv_to_paperless). Consuming one of those must never be
+# treated as a new receipt -- run() bails out on this before anything else.
+EXPENSE_CSV_FILENAME_PREFIX = "Expense_Statement_"
 
 
 def _env(name, default=None, required=False):
@@ -256,7 +261,59 @@ def download_receipt_file(url, api_token, dest_path, fallback_filename):
     return final_temp_path
 
 
+def _delete_existing_csv_documents(title, paperless_url, headers):
+    search_url = f"{paperless_url.rstrip('/')}/api/documents/?title__iexact={urllib.parse.quote(title)}"
+    request = urllib.request.Request(search_url, headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        existing = json.loads(response.read().decode("utf-8")).get("results", [])
+    for doc in existing:
+        delete_request = urllib.request.Request(
+            f"{paperless_url.rstrip('/')}/api/documents/{doc['id']}/",
+            headers=headers,
+            method="DELETE",
+        )
+        urllib.request.urlopen(delete_request, timeout=30).close()
+
+
+def _multipart_body(boundary, title, csv_path):
+    parts = io.BytesIO()
+    parts.write(f"--{boundary}\r\n".encode("utf-8"))
+    parts.write(b'Content-Disposition: form-data; name="title"\r\n\r\n')
+    parts.write(title.encode("utf-8"))
+    parts.write(b"\r\n")
+    parts.write(f"--{boundary}\r\n".encode("utf-8"))
+    parts.write(f'Content-Disposition: form-data; name="document"; filename="{csv_path.name}"\r\n'.encode("utf-8"))
+    parts.write(b"Content-Type: text/csv\r\n\r\n")
+    parts.write(csv_path.read_bytes())
+    parts.write(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+    return parts.getvalue()
+
+
+def sync_csv_to_paperless(csv_path, title, paperless_url, api_token):
+    """Make the current expense-statement CSV visible in the paperless UI:
+    replace any previous upload with the same title (each receipt appended
+    changes the file, and documents can't be updated in place) with a fresh
+    one reflecting the latest state."""
+    headers = {"Authorization": f"Token {api_token}"}
+    _delete_existing_csv_documents(title, paperless_url, headers)
+
+    boundary = uuid.uuid4().hex
+    upload_request = urllib.request.Request(
+        f"{paperless_url.rstrip('/')}/api/documents/post_document/",
+        data=_multipart_body(boundary, title, csv_path),
+        headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    urllib.request.urlopen(upload_request, timeout=60).close()
+
+
 def run():
+    original_filename = _env("DOCUMENT_ORIGINAL_FILENAME", "")
+    if original_filename.startswith(EXPENSE_CSV_FILENAME_PREFIX):
+        # One of our own CSV uploads getting consumed again -- never treat
+        # it as a new receipt, regardless of what tags matched on it.
+        return
+
     tags = _env("DOCUMENT_TAGS", "")
     receipt_tag = _env("PAPERLESS_RECEIPT_TAG", "Receipt")
     if receipt_tag not in [t.strip() for t in tags.split(",")]:
@@ -310,11 +367,19 @@ def run():
 
     lock_path = output_dir / ".expense-statement.lock"
     final_receipt_path = receipts_dir / f"{row_date}_{document_id}{downloaded_path.suffix}"
+    csv_title = f"Expense Statement {period_name}"
     with open(lock_path, "w") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         try:
             append_receipt(csv_path, employee_name, period_start, period_end, entry)
             downloaded_path.rename(final_receipt_path)
+            try:
+                sync_csv_to_paperless(csv_path, csv_title, paperless_url, api_token)
+            except urllib.error.URLError as err:
+                # The CSV on disk is already correct; only the UI-visible
+                # copy in paperless failed to refresh. Don't fail the whole
+                # run over that.
+                print(f"WARNING: failed to sync {csv_path} into paperless: {err}", file=sys.stderr)
         except Exception:
             downloaded_path.unlink(missing_ok=True)
             raise
