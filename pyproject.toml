@@ -201,10 +201,7 @@ commands = [["python3", "scripts/combined_imports_check.py"]]
 [tool.tox.env."duplicate-code"]
 skip_install = true
 allowlist_externals = ["npx", "npm"]
-commands = [
-  ["npm", "install", "--save-dev", "jscpd"],
-  ["npx", "jscpd", "."],
-]
+commands = [["npm", "install", "--save-dev", "jscpd"], ["npx", "jscpd", "."]]
 
 # --- Security -----------------------------------------------------------
 
@@ -278,4 +275,20 @@ commands = [
 skip_install = true
 deps = []
 allowlist_externals = ["tox"]
-commands = [["tox", "-e", "format"], ["tox", "-e", "github"], ["tox", "-e", "secret-detection"]]
+commands = [
+  [
+    "tox",
+    "-e",
+    "format",
+  ],
+  [
+    "tox",
+    "-e",
+    "github",
+  ],
+  [
+    "tox",
+    "-e",
+    "secret-detection",
+  ],
+]
