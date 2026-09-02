@@ -7,6 +7,7 @@ Configured entirely via env vars -- stdlib only, no external dependencies,
 since post-consume scripts run inside whatever Python environment the
 paperless container already has, not a dedicated venv for this script.
 """
+
 import csv, fcntl, io, json, os, re, sys, urllib.error, urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -40,13 +41,7 @@ TEMPLATE_FOOTER = """\
 For Office Use Only,,,,,,,,,,,
 ,,,,,,,,,,,
 """
-TEMPLATE_CSV = (
-    TEMPLATE_HEADER
-    + TEMPLATE_LINE_ITEM_ROW * TEMPLATE_LINE_ITEM_ROW_COUNT
-    + TEMPLATE_TOTALS
-    + TEMPLATE_BLANK_ROW * TEMPLATE_BLANK_ROW_COUNT
-    + TEMPLATE_FOOTER
-)
+TEMPLATE_CSV = TEMPLATE_HEADER + TEMPLATE_LINE_ITEM_ROW * TEMPLATE_LINE_ITEM_ROW_COUNT + TEMPLATE_TOTALS + TEMPLATE_BLANK_ROW * TEMPLATE_BLANK_ROW_COUNT + TEMPLATE_FOOTER
 
 CATEGORY_COLUMNS = {
     "Hotel": 3,
@@ -152,28 +147,19 @@ def validate_extraction(extracted, fallback_date):
 def compute_period(cadence, receipt_date, anchor_date=None):
     if cadence == "monthly":
         start = receipt_date.replace(day=1)
-        next_month = (
-            start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
-        )
+        next_month = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
         return start, next_month - timedelta(days=1)
 
     if cadence == "semimonthly":
         if receipt_date.day <= 15:
             return receipt_date.replace(day=1), receipt_date.replace(day=15)
         start = receipt_date.replace(day=16)
-        next_month = (
-            start.replace(year=start.year + 1, month=1, day=1)
-            if start.month == 12
-            else start.replace(month=start.month + 1, day=1)
-        )
+        next_month = start.replace(year=start.year + 1, month=1, day=1) if start.month == 12 else start.replace(month=start.month + 1, day=1)
         return start, next_month - timedelta(days=1)
 
     if cadence == "biweekly":
         if anchor_date is None:
-            raise SystemExit(
-                "EXPENSE_PERIOD_ANCHOR is required when EXPENSE_PERIOD_CADENCE=biweekly "
-                "(no calendar-natural biweekly boundary without one)."
-            )
+            raise SystemExit("EXPENSE_PERIOD_ANCHOR is required when EXPENSE_PERIOD_CADENCE=biweekly (no calendar-natural biweekly boundary without one).")
         cycle_index = (receipt_date - anchor_date).days // 14
         start = anchor_date + timedelta(days=cycle_index * 14)
         return start, start + timedelta(days=13)
@@ -196,9 +182,7 @@ def _load_or_create_rows(csv_path, period_start, period_end, employee_name):
 
 
 def _find_table_bounds(rows):
-    header_index = next(
-        i for i, row in enumerate(rows) if len(row) > 1 and row[0] == "Date" and row[1] == "Description"
-    )
+    header_index = next(i for i, row in enumerate(rows) if len(row) > 1 and row[0] == "Date" and row[1] == "Description")
     subtotal_row_index = next(i for i in range(header_index + 1, len(rows)) if not rows[i][TOTAL_COL].strip())
     return header_index, subtotal_row_index
 
