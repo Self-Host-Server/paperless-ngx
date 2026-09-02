@@ -61,7 +61,16 @@ ignore = ["E203", "E501", "E701", "E401", "B008"]
 
 # Default envs run when you type `tox` with no arguments
 [tool.tox]
-env_list = ["lint", "txt-lint", "format", "prettier", "toml-lint"]
+env_list = [
+  "lint",
+  "txt-lint",
+  "format",
+  "prettier",
+  "toml-lint",
+  "no-classes-check",
+  "combined-imports-check",
+  "duplicate-code",
+]
 work_dir = "/tmp/.tox"
 
 # Shared base config inherited by all envs
@@ -172,10 +181,53 @@ commands = [
   ],
 ]
 
+# --- Python checks ------------------------------------------------------
+
+[tool.tox.env."no-classes-check"]
+skip_install = true
+deps = []
+commands = [["python3", "scripts/no_classes_check.py"]]
+
+[tool.tox.env."combined-imports-check"]
+skip_install = true
+deps = []
+commands = [["python3", "scripts/combined_imports_check.py"]]
+
+# --- Duplication --------------------------------------------------------
+
+# Zero-tolerance duplicate-code check (jscpd, config in .jscpd.json). Real
+# duplication found should be refactored into a shared file the callers
+# source/import, not waved off by raising the threshold.
+[tool.tox.env."duplicate-code"]
+skip_install = true
+allowlist_externals = ["npx", "npm"]
+commands = [["npm", "install", "--save-dev", "jscpd"], ["npx", "jscpd", "."]]
+
+# --- Security -----------------------------------------------------------
+
+# Local-runnable equivalent of secret-detection.yml's TruffleHog GitHub
+# Action, for running the same check before pushing.
+[tool.tox.env."secret-detection"]
+skip_install = true
+allowlist_externals = ["docker"]
+commands = [
+  [
+    "docker",
+    "run",
+    "--rm",
+    "-v",
+    "{toxinidir}:/repo",
+    "trufflesecurity/trufflehog:latest",
+    "git",
+    "file:///repo",
+    "--results=verified,unverified,unknown",
+    "--fail",
+  ],
+]
 
 # --- Aggregate (CI) ---------------------------------------------------------
 
-# Runs the full CI chain: no-classes-check → lint → txt-lint → prettier → tests
+# Runs the full CI chain: lint → txt-lint → prettier → toml-lint → no-classes-check → combined-imports-check → duplicate-code
 [tool.tox.env.github]
 skip_install = true
 deps = []
@@ -201,11 +253,42 @@ commands = [
     "-e",
     "toml-lint",
   ],
+  [
+    "tox",
+    "-e",
+    "no-classes-check",
+  ],
+  [
+    "tox",
+    "-e",
+    "combined-imports-check",
+  ],
+  [
+    "tox",
+    "-e",
+    "duplicate-code",
+  ],
 ]
 
-# Runs format then the full github chain
+# Runs format then the full github chain then secret-detection
 [tool.tox.env.all]
 skip_install = true
 deps = []
 allowlist_externals = ["tox"]
-commands = [["tox", "-e", "format"], ["tox", "-e", "github"]]
+commands = [
+  [
+    "tox",
+    "-e",
+    "format",
+  ],
+  [
+    "tox",
+    "-e",
+    "github",
+  ],
+  [
+    "tox",
+    "-e",
+    "secret-detection",
+  ],
+]
