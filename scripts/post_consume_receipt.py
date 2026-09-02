@@ -153,8 +153,8 @@ def validate_extraction(extracted, fallback_date):
         amount = float(amount)
         if amount <= 0:
             raise ValueError
-    except (TypeError, ValueError):
-        raise ExtractionError(f"No valid amount extracted (got {amount!r}) -- refusing to guess, skipping.")
+    except (TypeError, ValueError) as err:
+        raise ExtractionError(f"No valid amount extracted (got {amount!r}) -- refusing to guess, skipping.") from err
 
     receipt_date = fallback_date
     date_str = extracted.get("date")
