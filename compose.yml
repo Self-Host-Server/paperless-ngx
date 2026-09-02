@@ -50,10 +50,9 @@ services:
       PAPERLESS_POST_CONSUME_SCRIPT: /usr/src/paperless/scripts/post_consume_receipt.py
       PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
       PAPERLESS_RECEIPT_TAG: ${PAPERLESS_RECEIPT_TAG:-Receipt}
+      PAPERLESS_CLEAR_TAG: ${PAPERLESS_CLEAR_TAG:-Clear Statement}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://192.168.1.14:11434}
       OLLAMA_EXTRACTION_MODEL: ${OLLAMA_EXTRACTION_MODEL:-qwen2.5:7b}
-      EXPENSE_PERIOD_CADENCE: ${EXPENSE_PERIOD_CADENCE:-monthly}
-      EXPENSE_PERIOD_ANCHOR: ${EXPENSE_PERIOD_ANCHOR:-}
       EMPLOYEE_NAME: ${EMPLOYEE_NAME}
       # Nested under the `media` volume rather than a fresh one: the
       # paperless entrypoint only chowns its own known paths (data, media,
