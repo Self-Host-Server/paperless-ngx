@@ -53,7 +53,6 @@ services:
       PAPERLESS_CLEAR_TAG: ${PAPERLESS_CLEAR_TAG:-Clear Statement}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://192.168.1.14:11434}
       OLLAMA_EXTRACTION_MODEL: ${OLLAMA_EXTRACTION_MODEL:-qwen2.5:7b}
-      EMPLOYEE_NAME: ${EMPLOYEE_NAME}
       # Nested under the `media` volume rather than a fresh one: the
       # paperless entrypoint only chowns its own known paths (data, media,
       # consume, export) to the non-root paperless user, so a brand-new

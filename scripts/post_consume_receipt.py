@@ -90,6 +90,24 @@ def fetch_document_content(document_id, paperless_url, api_token):
     return content
 
 
+def fetch_employee_name(owner_username, paperless_url, api_token):
+    """The statement's "Name" field comes from whichever paperless account
+    owns the receipt, not a fixed config value -- so it's correct even when
+    several people share one instance. Prefers the account's real name,
+    falling back to the username if that isn't set."""
+    request = urllib.request.Request(
+        f"{paperless_url.rstrip('/')}/api/users/?username={urllib.parse.quote(owner_username)}",
+        headers={"Authorization": f"Token {api_token}"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        results = json.loads(response.read().decode("utf-8")).get("results", [])
+    if not results:
+        return owner_username
+    user = results[0]
+    full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+    return full_name or owner_username
+
+
 EXTRACTION_PROMPT_TEMPLATE = """You are extracting expense information from a receipt's OCR text for an expense report.
 
 Return ONLY a JSON object with exactly these keys:
@@ -171,7 +189,7 @@ def _resolve_group_tag(tags, excluded_tags):
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _load_or_create_rows(csv_path, employee_name, group_tag):
+def _load_or_create_rows(csv_path, group_tag):
     if csv_path.exists():
         with open(csv_path, newline="", encoding="utf-8") as f:
             return list(csv.reader(f))
@@ -179,9 +197,15 @@ def _load_or_create_rows(csv_path, employee_name, group_tag):
     rows = list(csv.reader(io.StringIO(TEMPLATE_CSV)))
     purpose_row_index = next(i for i, row in enumerate(rows) if row and row[0] == "Purpose:")
     rows[purpose_row_index][1] = group_tag
+    return rows
+
+
+def _update_employee_name(rows, employee_name):
+    """Unlike Purpose (the group tag, fixed at creation), Name reflects
+    whoever owns the most recently appended receipt -- several people can
+    share a group tag, and the template only has room for one name."""
     name_row_index = next(i for i, row in enumerate(rows) if row and row[0] == "Name")
     rows[name_row_index][1] = employee_name
-    return rows
 
 
 def _update_date_range(rows, header_index, subtotal_row_index):
@@ -236,7 +260,7 @@ def _recompute_totals(rows, header_index, subtotal_row_index):
 
 
 def append_receipt(csv_path, employee_name, group_tag, entry):
-    rows = _load_or_create_rows(csv_path, employee_name, group_tag)
+    rows = _load_or_create_rows(csv_path, group_tag)
     header_index, subtotal_row_index = _find_table_bounds(rows)
     target_row_index, rows, subtotal_row_index = _find_or_insert_target_row(rows, header_index, subtotal_row_index)
 
@@ -245,6 +269,7 @@ def append_receipt(csv_path, employee_name, group_tag, entry):
     rows[target_row_index][CATEGORY_COLUMNS[entry["category"]]] = f"{entry['amount']:.2f}"
     rows[target_row_index][TOTAL_COL] = f"${entry['amount']:.2f}"
 
+    _update_employee_name(rows, employee_name)
     _update_date_range(rows, header_index, subtotal_row_index)
     _recompute_totals(rows, header_index, subtotal_row_index)
 
@@ -391,11 +416,19 @@ def run():
         )
         return
 
+    owner_username = _env("DOCUMENT_OWNER", "")
+    if not owner_username:
+        print(
+            f"Skipping document {document_id}: no owner set -- can't attribute this receipt to anyone.",
+            file=sys.stderr,
+        )
+        return
+    employee_name = fetch_employee_name(owner_username, paperless_url, api_token)
+
     document_created = _env("DOCUMENT_CREATED", required=True)
     fallback_date = datetime.fromisoformat(document_created.replace("Z", "+00:00")).date()
     ollama_base_url = _env("OLLAMA_BASE_URL", "http://192.168.1.14:11434")
     ollama_model = _env("OLLAMA_EXTRACTION_MODEL", "qwen2.5:7b")
-    employee_name = _env("EMPLOYEE_NAME", required=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
