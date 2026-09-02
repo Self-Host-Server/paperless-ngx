@@ -55,18 +55,20 @@ services:
       EXPENSE_PERIOD_CADENCE: ${EXPENSE_PERIOD_CADENCE:-monthly}
       EXPENSE_PERIOD_ANCHOR: ${EXPENSE_PERIOD_ANCHOR:-}
       EMPLOYEE_NAME: ${EMPLOYEE_NAME}
-      EXPENSE_OUTPUT_DIR: /data/expense-statements
+      # Nested under the `media` volume rather than a fresh one: the
+      # paperless entrypoint only chowns its own known paths (data, media,
+      # consume, export) to the non-root paperless user, so a brand-new
+      # top-level volume/bind-mount stays root-owned and unwritable.
+      EXPENSE_OUTPUT_DIR: /usr/src/paperless/media/expense-statements
     volumes:
       - data:/usr/src/paperless/data
       - media:/usr/src/paperless/media
       - ./export:/usr/src/paperless/export:Z
       - ./consume:/usr/src/paperless/consume:Z
       - ./scripts/post_consume_receipt.py:/usr/src/paperless/scripts/post_consume_receipt.py:ro
-      - expense_statements:/data/expense-statements
 
 volumes:
   data:
   media:
   pgdata:
   redisdata:
-  expense_statements:

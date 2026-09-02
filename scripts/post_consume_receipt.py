@@ -313,7 +313,7 @@ def run():
     anchor_str = _env("EXPENSE_PERIOD_ANCHOR")
     anchor_date = date.fromisoformat(anchor_str) if anchor_str else None
     employee_name = _env("EMPLOYEE_NAME", required=True)
-    output_dir = Path(_env("EXPENSE_OUTPUT_DIR", "/data/expense-statements"))
+    output_dir = Path(_env("EXPENSE_OUTPUT_DIR", "/usr/src/paperless/media/expense-statements"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
