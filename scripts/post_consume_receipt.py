@@ -275,32 +275,192 @@ def _delete_existing_csv_documents(title, paperless_url, headers):
         urllib.request.urlopen(delete_request, timeout=30).close()
 
 
-def _multipart_body(boundary, title, csv_path):
+def _multipart_body(boundary, title, filename, content_type, file_bytes):
     parts = io.BytesIO()
     parts.write(f"--{boundary}\r\n".encode("utf-8"))
     parts.write(b'Content-Disposition: form-data; name="title"\r\n\r\n')
     parts.write(title.encode("utf-8"))
     parts.write(b"\r\n")
     parts.write(f"--{boundary}\r\n".encode("utf-8"))
-    parts.write(f'Content-Disposition: form-data; name="document"; filename="{csv_path.name}"\r\n'.encode("utf-8"))
-    parts.write(b"Content-Type: text/csv\r\n\r\n")
-    parts.write(csv_path.read_bytes())
+    parts.write(f'Content-Disposition: form-data; name="document"; filename="{filename}"\r\n'.encode("utf-8"))
+    parts.write(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+    parts.write(file_bytes)
     parts.write(f"\r\n--{boundary}--\r\n".encode("utf-8"))
     return parts.getvalue()
 
 
+# --- Minimal PDF rendering ---------------------------------------------
+#
+# gotenberg's LibreOffice conversion (already in this stack) renders the
+# CSV's full 12-column Connx layout by splitting it across several pages
+# with truncated columns -- not remotely readable. Since the receipt data
+# is fully known at this point anyway, render a focused summary (date,
+# vendor, category, amount, grand total) as a PDF by hand instead. Plain
+# text-drawing/line PDF operators only, no embedded fonts -- small enough
+# not to be worth a dependency the container may not have.
+
+PDF_PAGE_WIDTH = 612
+PDF_PAGE_HEIGHT = 792
+PDF_MARGIN = 50
+PDF_ROW_HEIGHT = 16
+PDF_ROWS_PER_PAGE = 30
+PDF_COLUMNS = [("Date", 70), ("Description", 260), ("Category", 80), ("Amount", 72)]
+
+
+def _pdf_escape(text):
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _pdf_text(x, y, size, text, font="F1"):
+    return f"BT /{font} {size} Tf 1 0 0 1 {x:.2f} {y:.2f} Tm ({_pdf_escape(text)}) Tj ET\n"
+
+
+def _pdf_hline(x1, x2, y):
+    return f"{x1:.2f} {y:.2f} m {x2:.2f} {y:.2f} l S\n"
+
+
+def _extract_statement_summary(rows):
+    name_row_index = next(i for i, row in enumerate(rows) if row and row[0] == "Name")
+    to_row_index = name_row_index + 1
+    employee_name = rows[name_row_index][1]
+    period_start = rows[name_row_index][10]
+    period_end = rows[to_row_index][10]
+
+    header_index, subtotal_row_index = _find_table_bounds(rows)
+    items = []
+    for i in range(header_index + 1, subtotal_row_index):
+        row = rows[i]
+        if not row[DATE_COL].strip():
+            continue
+        category = next((cat for cat, col in CATEGORY_COLUMNS.items() if row[col].strip()), "")
+        items.append((row[DATE_COL], row[DESCRIPTION_COL][:45], category, row[TOTAL_COL]))
+
+    total_row = next(i for i in range(subtotal_row_index + 1, len(rows)) if rows[i][8] == "TOTAL")
+    grand_total = rows[total_row][TOTAL_COL]
+    return employee_name, period_start, period_end, items, grand_total
+
+
+def _pdf_table_page_content(title_lines, items_slice, grand_total_line, page_num, page_count):
+    table_width = sum(width for _, width in PDF_COLUMNS)
+    ops = []
+    y = PDF_PAGE_HEIGHT - PDF_MARGIN
+    for text, size, font in title_lines:
+        ops.append(_pdf_text(PDF_MARGIN, y, size, text, font))
+        y -= size + 6
+    y -= 10
+
+    x = PDF_MARGIN
+    for label, width in PDF_COLUMNS:
+        ops.append(_pdf_text(x + 2, y, 9, label, "F2"))
+        x += width
+    y -= 4
+    ops.append(_pdf_hline(PDF_MARGIN, PDF_MARGIN + table_width, y))
+    y -= PDF_ROW_HEIGHT
+
+    for item_date, description, category, amount in items_slice:
+        x = PDF_MARGIN
+        for value, (_, width) in zip((item_date, description, category, amount), PDF_COLUMNS, strict=True):
+            ops.append(_pdf_text(x + 2, y, 9, value, "F1"))
+            x += width
+        y -= PDF_ROW_HEIGHT
+
+    if grand_total_line is not None:
+        y -= 6
+        ops.append(_pdf_hline(PDF_MARGIN, PDF_MARGIN + table_width, y + PDF_ROW_HEIGHT - 4))
+        label_x = PDF_MARGIN + table_width - PDF_COLUMNS[-1][1] - 80
+        ops.append(_pdf_text(label_x, y, 10, "Grand Total:", "F2"))
+        ops.append(_pdf_text(PDF_MARGIN + table_width - PDF_COLUMNS[-1][1] + 2, y, 10, grand_total_line, "F2"))
+
+    ops.append(_pdf_text(PDF_PAGE_WIDTH - PDF_MARGIN - 70, PDF_MARGIN - 25, 8, f"Page {page_num} of {page_count}"))
+    return "".join(ops).encode("utf-8")
+
+
+def _pdf_object_bytes(num, body):
+    return f"{num} 0 obj\n".encode("latin-1") + body + b"\nendobj\n"
+
+
+def _pdf_stream_object(content_bytes):
+    return f"<< /Length {len(content_bytes)} >>\nstream\n".encode("latin-1") + content_bytes + b"\nendstream"
+
+
+def _build_pdf(pages_content):
+    font_f1_num, font_f2_num = 3, 4
+    first_page_num = 5
+    page_nums = list(range(first_page_num, first_page_num + len(pages_content)))
+    content_nums = list(range(first_page_num + len(pages_content), first_page_num + 2 * len(pages_content)))
+
+    objects = {
+        1: b"<< /Type /Catalog /Pages 2 0 R >>",
+        2: f"<< /Type /Pages /Kids [{' '.join(f'{p} 0 R' for p in page_nums)}] /Count {len(page_nums)} >>".encode(
+            "latin-1"
+        ),
+        font_f1_num: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        font_f2_num: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+    }
+    for page_num, content_num in zip(page_nums, content_nums, strict=True):
+        objects[page_num] = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PDF_PAGE_WIDTH} {PDF_PAGE_HEIGHT}] "
+            f"/Resources << /Font << /F1 {font_f1_num} 0 R /F2 {font_f2_num} 0 R >> >> "
+            f"/Contents {content_num} 0 R >>"
+        ).encode("latin-1")
+    for content_num, content_bytes in zip(content_nums, pages_content, strict=True):
+        objects[content_num] = _pdf_stream_object(content_bytes)
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = {}
+    for num in sorted(objects):
+        offsets[num] = len(out)
+        out += _pdf_object_bytes(num, objects[num])
+    xref_offset = len(out)
+    count = max(objects) + 1
+    out += f"xref\n0 {count}\n".encode("latin-1")
+    out += b"0000000000 65535 f \n"
+    for num in range(1, count):
+        out += f"{offsets.get(num, 0):010d} 00000 n \n".encode("latin-1")
+    out += b"trailer\n" + f"<< /Size {count} /Root 1 0 R >>\n".encode("latin-1")
+    out += f"startxref\n{xref_offset}\n%%EOF".encode("latin-1")
+    return bytes(out)
+
+
+def render_statement_pdf(rows):
+    employee_name, period_start, period_end, items, grand_total = _extract_statement_summary(rows)
+    title_lines = [
+        ("Expense Statement", 16, "F2"),
+        (f"Employee: {employee_name}", 10, "F1"),
+        (f"Period: {period_start} to {period_end}", 10, "F1"),
+    ]
+    pages_items = [items[i : i + PDF_ROWS_PER_PAGE] for i in range(0, len(items), PDF_ROWS_PER_PAGE)] or [[]]
+    page_count = len(pages_items)
+    pages_content = [
+        _pdf_table_page_content(
+            title_lines if page_num == 1 else [],
+            page_items,
+            grand_total if page_num == page_count else None,
+            page_num,
+            page_count,
+        )
+        for page_num, page_items in enumerate(pages_items, start=1)
+    ]
+    return _build_pdf(pages_content)
+
+
 def sync_csv_to_paperless(csv_path, title, paperless_url, api_token):
-    """Make the current expense-statement CSV visible in the paperless UI:
-    replace any previous upload with the same title (each receipt appended
-    changes the file, and documents can't be updated in place) with a fresh
-    one reflecting the latest state."""
+    """Make the current expense statement visible in the paperless UI as a
+    readable PDF summary: replace any previous upload with the same title
+    (each receipt appended changes the file, and documents can't be updated
+    in place) with a fresh one reflecting the latest state. The CSV on disk
+    -- the actual Connx-template deliverable -- is untouched by this."""
     headers = {"Authorization": f"Token {api_token}"}
     _delete_existing_csv_documents(title, paperless_url, headers)
+
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    pdf_bytes = render_statement_pdf(rows)
 
     boundary = uuid.uuid4().hex
     upload_request = urllib.request.Request(
         f"{paperless_url.rstrip('/')}/api/documents/post_document/",
-        data=_multipart_body(boundary, title, csv_path),
+        data=_multipart_body(boundary, title, f"{csv_path.stem}.pdf", "application/pdf", pdf_bytes),
         headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
